@@ -6,7 +6,7 @@ using Telegram.Bot.Args;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.InlineQueryResults;
 using Telegram.Bot.Types.ReplyMarkups;
-using AngryWeatherBot.QuickType;
+using QuickType;
 using System.Net.Http;
 using Newtonsoft.Json;
 
@@ -20,12 +20,8 @@ namespace Telegram.Bot.Examples.Echo
         {
             var me = Bot.GetMeAsync().Result;
             Console.Title = me.Username;
-
             Bot.OnMessage += BotOnMessageReceived;
             Bot.OnMessageEdited += BotOnMessageReceived;
-            Bot.OnCallbackQuery += BotOnCallbackQueryReceived;
-            Bot.OnInlineQuery += BotOnInlineQueryReceived;
-            Bot.OnInlineResultChosen += BotOnChosenInlineResultReceived;
             Bot.OnReceiveError += BotOnReceiveError;
 
             Bot.StartReceiving(Array.Empty<UpdateType>());
@@ -38,86 +34,21 @@ namespace Telegram.Bot.Examples.Echo
         {
             var message = messageEventArgs.Message;
 
+            //message.Chat.Id
+
             if (message == null || message.Type != MessageType.Text) return;
 
             switch (message.Text.Split(' ').First())
             {
-                // send inline keyboard
-                case "/inline":
-                    await Bot.SendChatActionAsync(message.Chat.Id, ChatAction.Typing);
-
-                    await Task.Delay(500); // simulate longer running task
-
-                    var inlineKeyboard = new InlineKeyboardMarkup(new[]
-                    {
-                        new [] // first row
-                        {
-                            InlineKeyboardButton.WithCallbackData("Auto White Widow"),
-                            InlineKeyboardButton.WithCallbackData("Crtical Kush"),
-                        },
-                        new [] // second row
-                        {
-                            InlineKeyboardButton.WithCallbackData("Kabul"),
-                            InlineKeyboardButton.WithCallbackData("Auto Gagarin"),
-                        }
-                    });
-
-                    await Bot.SendTextMessageAsync(
-                        message.Chat.Id,
-                        "Выбирай шишкарик",
-                        replyMarkup: inlineKeyboard);
-                    break;
-
-                // send custom keyboard
-                case "/keyboard":
-                    ReplyKeyboardMarkup ReplyKeyboard = new[]
-                    {
-                        new[] { "Auto White Widow", "Crtical Kush" },
-                        new[] { "Kabul", "Auto Gagarin" },
-                    };
-
-                    await Bot.SendTextMessageAsync(
-                        message.Chat.Id,
-                        "Выбирай шишкарик",
-                        replyMarkup: ReplyKeyboard);
-                    break;
-
-                // send a photo
-                case "/photo":
-                    await Bot.SendChatActionAsync(message.Chat.Id, ChatAction.UploadPhoto);
-
-                    const string file = @"Files/tux.png";
-
-                    var fileName = file.Split(Path.DirectorySeparatorChar).Last();
-
-                    using (var fileStream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read))
-                    {
-                        await Bot.SendPhotoAsync(
-                            message.Chat.Id,
-                            fileStream,
-                            "Nice Picture");
-                    }
-                    break;
-
-                // request location or contact
-                case "/request":
-                    var RequestReplyKeyboard = new ReplyKeyboardMarkup(new[]
-                    {
-                        KeyboardButton.WithRequestLocation("Location"),
-                        KeyboardButton.WithRequestContact("Contact"),
-                    });
-
-                    await Bot.SendTextMessageAsync(
-                        message.Chat.Id,
-                        "Who or Where are you?",
-                        replyMarkup: RequestReplyKeyboard);
-                    break;
 
                 case "/weather":
 
                     string url = "http://api.openweathermap.org/data/2.5/weather?q=Kyiv,ua&appid=228538c118dcbd5e9d7a79ed4b760927&units=metric";
-                    string jsonString = await PostCallAPI(url);
+                    string jsonString = await GetCallAPI(url);
                     var pwdResetRequest = PwdResetRequest.FromJson(jsonString);
+
+                    string temperatureStr = Temperature(pwdResetRequest.Main.Temp);
+                    string windStr = Wind(pwdResetRequest.Wind.Speed);
 
                     await Bot.SendTextMessageAsync(
                           message.Chat.Id,
@@ -125,16 +56,17 @@ namespace Telegram.Bot.Examples.Echo
                           "\U0001f31e" + " Погода сейчас " + "\U0001f31a" + "\n" +
                           "\n" +
                           "\U0001f321" + " Температура: " + pwdResetRequest.Main.Temp.ToString() + " °C" + "\n" +
+                          "   " + temperatureStr + "\n" +
+                          "----------------------------------------------" + "\n" +
                           "\U0001f32a" + " Скорость ветра: " + pwdResetRequest.Wind.Speed.ToString() + " м/с \n" +
+                          "   " + windStr + "\n" +
+                          "----------------------------------------------" + "\n" +
                           "\U0001f329" + " Шо по тучам?: " + pwdResetRequest.Weather[0].Description
                            );
                     break;
 
                 default:
                     const string usage = @"Usage: 
-/inline   - send inline keyboard
-/keyboard - send custom keyboard
-/request  - request location or contact 
 /weather - send weather";
 
                     await Bot.SendTextMessageAsync(
@@ -145,59 +77,6 @@ namespace Telegram.Bot.Examples.Echo
             }
         }
 
-        private static async void BotOnCallbackQueryReceived(object sender, CallbackQueryEventArgs callbackQueryEventArgs)
-        {
-            var callbackQuery = callbackQueryEventArgs.CallbackQuery;
-
-            await Bot.AnswerCallbackQueryAsync(
-                callbackQuery.Id,
-                $"Received {callbackQuery.Data}");
-
-            await Bot.SendTextMessageAsync(
-                callbackQuery.Message.Chat.Id,
-                $"Received {callbackQuery.Data}");
-        }
-
-        private static async void BotOnInlineQueryReceived(object sender, InlineQueryEventArgs inlineQueryEventArgs)
-        {
-            Console.WriteLine($"Received inline query from: {inlineQueryEventArgs.InlineQuery.From.Id}");
-
-            InlineQueryResultBase[] results = {
-                new InlineQueryResultLocation(
-                    id: "1",
-                    latitude: 40.7058316f,
-                    longitude: -74.2581888f,
-                    title: "New York")   // displayed result
-                    {
-                        InputMessageContent = new InputLocationMessageContent(
-                            latitude: 40.7058316f,
-                            longitude: -74.2581888f)    // message if result is selected
-                    },
-
-                new InlineQueryResultLocation(
-                    id: "2",
-                    latitude: 13.1449577f,
-                    longitude: 52.507629f,
-                    title: "Berlin") // displayed result
-                    {
-                        InputMessageContent = new InputLocationMessageContent(
-                            latitude: 13.1449577f,
-                            longitude: 52.507629f)   // message if result is selected
-                    }
-            };
-
-            await Bot.AnswerInlineQueryAsync(
-                inlineQueryEventArgs.InlineQuery.Id,
-                results,
-                isPersonal: true,
-                cacheTime: 0);
-        }
-
-        private static void BotOnChosenInlineResultReceived(object sender, ChosenInlineResultEventArgs chosenInlineResultEventArgs)
-        {
-            Console.WriteLine($"Received inline result: {chosenInlineResultEventArgs.ChosenInlineResult.ResultId}");
-        }
-
         private static void BotOnReceiveError(object sender, ReceiveErrorEventArgs receiveErrorEventArgs)
         {
             Console.WriteLine("Received error: {0} — {1}",
@@ -205,7 +84,7 @@ namespace Telegram.Bot.Examples.Echo
                 receiveErrorEventArgs.ApiRequestException.Message);
         }
 
-        public static async Task<string> PostCallAPI(string url)
+        public static async Task<string> GetCallAPI(string url)
         {
             try
             {
@@ -225,6 +104,61 @@ namespace Telegram.Bot.Examples.Echo
                 Console.WriteLine(ex);
             }
             return null;
+        }
+
+        public static string Temperature(double temp)
+        {
+            string temperatureStr;
+
+            if (temp > 30)
+                temperatureStr = "Ну и жара, я б в такую погоду дома под кондиционером сидел и пивко пил";
+            else if (temp > 20)
+                temperatureStr = "Погода как раз погулять! Надевай сандали с носками (но можно и без, если ты не глэк)";
+            else if (temp > 10)
+                temperatureStr = "Прохладно...Надевай кофту (не хипстерские свитшот и худи)";
+            else if (temp > 0)
+                temperatureStr = "Надеюсь ты уже купил теплую обувь??? Или как модник-бомж гоняешь в летних кроссовках?";
+            else if (temp > -10)      //Пора раскатывать подкаты, мамин ты модник...
+                temperatureStr = "Если ты без шапки, сразу звоню твоей маме.";
+            else if (temp > -20)
+                temperatureStr = "Подштанники это не зашквар)";
+            else if (temp > -25)
+                temperatureStr = "Не ну можно даже шарф надеть";
+            else
+                temperatureStr = "Думаю врятле стоит выходить на улицу, если ты не белый ходок";
+            return temperatureStr;
+        }
+
+        public static string Wind(long wind)
+        {
+            if (wind == 0)
+                return "Ветра нема";
+            else if (wind == 1)
+                return "Специалисты говорят что ветер тихий";
+            else if (wind < 3)
+                return "Специалисты говорят что ветер легкий";
+            else if (wind < 5)
+                return "Специалисты говорят что ветер слабый";
+            else if (wind < 7)
+                return "Специалисты говорят что ветер умеренный";
+            else if (wind < 9)
+                return "Специалисты говорят что ветер Свежий";
+            else if (wind < 12)
+                return "Специалисты говорят что ветер Сильный";
+            else if (wind < 15)
+                return "Специалисты говорят что ветер крепкий";
+            else if (wind < 18)
+                return "Специалисты говорят что ветер очень крепкий";
+            else if (wind < 21)
+                return "Специалисты говорят что сейчас шторм";
+            else if (wind < 25)
+                return "Специалисты говорят что сейчас сильный шторм";
+            else if (wind < 29)
+                return "Специалисты говорят что сейчас жестокий шторм";
+            else if (wind > 29)
+                return "Специалисты говорят что сейчас ураган";
+            else
+                return "Ветер эрор";
         }
     }
 }
